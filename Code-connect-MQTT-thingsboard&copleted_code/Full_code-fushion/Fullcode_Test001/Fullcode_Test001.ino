@@ -1,0 +1,526 @@
+///////////////////////////////////////////// SetUP WiFi & Publish ///////////////////////////////////////////
+#include <PubSubClient.h>
+#include <WiFi.h>
+#include <ArduinoJson.h>
+
+const char *ssid = "EINSOFNINE_2G";
+const char *password = "hunter01";
+
+#define MQTT_SERVER "thingsboard.weaverbase.com" 
+#define MQTT_PORT 1883
+#define MQTT_USERNAME "7p2oxwi1ssz0zyybgo7o"
+#define MQTT_PASSWORD "123456"
+#define MQTT_NAME "PICO_W"
+#define MQTT_TOPIC "v1/devices/me/telemetry"
+
+WiFiClient client;
+PubSubClient mqtt(client);
+
+
+///////////////////////////////////////////// Scan I2c Pin address ///////////////////////////////////////////
+
+#include <Wire.h>
+#include <MCP342x.h>
+ 
+/* Demonstrate the use of convertAndRead().*/
+long value_1_1,value_2_1,value_3_1,value_4_1;
+long value_1_2,value_2_2,value_3_2,value_4_2;
+long value_1_3,value_2_3,value_3_3,value_4_3;
+
+// 0x68 is the default address for all MCP342x devices
+uint8_t address_mcp3424_1 = 0x68;
+uint8_t address_mcp3424_2 = 0x6A;
+uint8_t address_mcp3424_3 = 0x6C;
+
+MCP342x adc1 = MCP342x(address_mcp3424_1);
+MCP342x adc2 = MCP342x(address_mcp3424_2);
+MCP342x adc3 = MCP342x(address_mcp3424_3);
+
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+
+  // Enable power for MCP342x (needed for FL100 shield only)
+  // Reset devices
+  MCP342x::generalCallReset();
+  delay(1); // MC342x needs 300us to settle, wait 1ms
+
+  // Check device present
+  Wire.requestFrom(address_mcp3424_1, (uint8_t)1);
+  if (!Wire.available()) {
+    Serial.print("No device found at address ");
+    Serial.println(address_mcp3424_1, HEX);
+    while (1);
+  }
+  Wire.requestFrom(address_mcp3424_2, (uint8_t)2);
+  if (!Wire.available()) {
+    Serial.print("No device found at address ");
+    Serial.println(address_mcp3424_2, HEX);
+    while (1);
+  }
+  Wire.requestFrom(address_mcp3424_3, (uint8_t)3);
+  if (!Wire.available()) {
+    Serial.print("No device found at address ");
+    Serial.println(address_mcp3424_3, HEX);
+    while (1);
+  }
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+
+  // Connect to MQTT broker with username and password
+  mqtt.setServer(MQTT_SERVER, MQTT_PORT);
+  if (mqtt.connected() == false){
+    Serial.print("MQTT connection...");
+    if (mqtt.connect(MQTT_NAME, MQTT_USERNAME, MQTT_PASSWORD)){
+      Serial.print("connected");
+    }else{
+      Serial.println("connected");
+      delay(5000);
+    }
+  }
+
+  initial_TempHumi();
+  initial_wind();
+  //initial_Rain();
+
+}
+
+void loop() {
+  MCP342x::Config status;
+  // Initiate a conversion; convertAndRead() will wait until it can be read
+  uint8_t err1_1 = adc1.convertAndRead(MCP342x::channel1, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_1_1, status);
+  uint8_t err2_1 = adc1.convertAndRead(MCP342x::channel2, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_2_1, status);
+  uint8_t err3_1 = adc1.convertAndRead(MCP342x::channel3, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_3_1, status);
+  uint8_t err4_1 = adc1.convertAndRead(MCP342x::channel4, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_4_1, status);
+
+  uint8_t err1_2 = adc2.convertAndRead(MCP342x::channel1, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_1_2, status);
+  uint8_t err2_2 = adc2.convertAndRead(MCP342x::channel2, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_2_2, status);
+  uint8_t err3_2 = adc2.convertAndRead(MCP342x::channel3, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_3_2, status);
+  uint8_t err4_2 = adc2.convertAndRead(MCP342x::channel4, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_4_2, status);
+
+  uint8_t err1_3 = adc3.convertAndRead(MCP342x::channel1, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_1_3, status);
+  uint8_t err2_3 = adc3.convertAndRead(MCP342x::channel2, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_2_3, status);
+  uint8_t err3_3 = adc3.convertAndRead(MCP342x::channel3, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_3_3, status);
+  uint8_t err4_3 = adc3.convertAndRead(MCP342x::channel4, MCP342x::oneShot,MCP342x::resolution16, MCP342x::gain1,1000000, value_4_3, status);
+
+  
+  if (err1_1) {
+    Serial.print("Convert error: ");
+    Serial.println(err1_1);
+  }
+
+
+  if(err1_2){
+    Serial.print("Convert error: ");
+    Serial.println(err1_2);
+  }
+
+
+  if(err1_3){
+    Serial.print("Convert error: ");
+    Serial.println(err1_3);
+  }
+
+
+  soilMoisture();
+  TempHumi();
+  UV_sensor();
+  Wind();
+  //Rain_loop();
+  delay(1000);
+
+}
+
+
+
+
+/////////////////////////////////////////////Soil moisture-RK520-01 void ////////////////////////////////////////////
+
+
+/////////Variable of Temp//////////////
+int decimalPrecision = 2;               // decimal places for all values shown in LED Display & Serial Monitor
+float voltageDividerR1 = 10000;         // Resistor value in R1 for voltage devider method 
+float BValue = 3950;                    // The B Value of the thermistor for the temperature measuring range
+float R1 = 6500;                        // Thermistor resistor rating at based temperature (25 degree celcius)
+float T1 = 298.15;                      /* Base temperature T1 in Kelvin (default should be at 25 degree)*/
+float R2_0 , R2_1 , R2_2 , R2_3 ;       /* Resistance of Thermistor (in ohm) at Measuring Temperature*/
+float T2_0 , T2_1 , T2_2 , T2_3 ;       /* Measurement temperature T2 in Kelvin */
+float a0,b0,c0,d0,a1,b1,c1,d1,a2,b2,c2,d2,a3,b3,c3,d3;
+float e = 2.718281828;
+float tempLastSample_0 = 0, tempSampleSum_0 = 0, tempMean_0 = 0 , tempSampleCount_0 = 1000 ;
+float tempLastSample_1 = 0, tempSampleSum_1 = 0, tempMean_1 = 0 , tempSampleCount_1 = 1000 ;
+float tempLastSample_2 = 0, tempSampleSum_2 = 0, tempMean_2 = 0 , tempSampleCount_2 = 1000 ;
+float tempLastSample_3 = 0, tempSampleSum_3 = 0, tempMean_3 = 0 , tempSampleCount_3 = 1000 ;
+
+
+///////////Variable of Soil moisture//////////////
+const float Vmin = 0.0;   
+const float Vmax = 5.0;   
+const float soilMin = 0.0;  
+const float soilMax = 100.0;  
+
+
+void soilMoisture(){
+  
+  //////// Temperature calc_1 ////////
+  int value_soucre_T0 = value_1_3;
+  int value_soucreMAP_T0 = map(value_soucre_T0 , 0 , 32767 , 32767 , 0);
+  int valueTemp_0 = value_soucreMAP_T0;
+  if(millis() >= tempLastSample_0 + 1){
+    tempSampleSum_0 = tempSampleSum_0 + valueTemp_0;
+    tempSampleCount_0 = tempSampleCount_0 + 1;
+    tempLastSample_0 = millis();
+  }
+  
+  tempMean_0 = tempSampleSum_0 / tempSampleCount_0;
+  R2_0 = ((voltageDividerR1 * tempMean_0)/(32767 - tempMean_0));
+  a0 = 1/T1;
+  b0 = log10(R1/R2_0);
+  c0 = b0 / log10(e);
+  d0 = c0 / BValue;
+  T2_0 = 1 / (a0-d0);
+  T2_0 = T2_0 - 273.15,decimalPrecision;
+
+
+  //////// Temperature calc_2 ////////
+  int value_soucre_T1 = value_3_3;
+  int value_soucreMAP_T1 = map(value_soucre_T1 , 0 , 32767 , 32767 , 0);
+  int valueTemp_1 = value_soucreMAP_T1;
+  if(millis() >= tempLastSample_1 + 1){
+    tempSampleSum_1 = tempSampleSum_1 + valueTemp_1;
+    tempSampleCount_1 = tempSampleCount_1 + 1;
+    tempLastSample_1 = millis();
+  }
+  
+  tempMean_1 = tempSampleSum_1 / tempSampleCount_1;
+  R2_1 = ((voltageDividerR1 * tempMean_1)/(32767 - tempMean_1));
+  a1 = 1/T1;
+  b1 = log10(R1/R2_1);
+  c1 = b1 / log10(e);
+  d1 = c1 / BValue;
+  T2_1 = 1 / (a1-d1);
+  T2_1 = T2_1 - 273.15,decimalPrecision;
+
+
+
+//  //////// Temperature calc_3 ////////
+  int value_soucre_T2 = value_1_1;
+  int value_soucreMAP_T2 = map(value_soucre_T2 , 0 , 32767 , 32767 , 0);
+  int valueTemp_2 = value_soucreMAP_T2;
+  if(millis() >= tempLastSample_2 + 1){
+    tempSampleSum_2 = tempSampleSum_2 + valueTemp_2;
+    tempSampleCount_2 = tempSampleCount_2 + 1;
+    tempLastSample_2 = millis();
+  }
+  
+  tempMean_2 = tempSampleSum_2 / tempSampleCount_2;
+  R2_2 = ((voltageDividerR1 * tempMean_2)/(32767 - tempMean_2));
+  a2 = 1/T1;
+  b2 = log10(R1/R2_2);
+  c2 = b2 / log10(e);
+  d2 = c2 / BValue;
+  T2_2 = 1 / (a2-d2);
+  T2_2 = T2_2 - 273.15,decimalPrecision;
+
+  
+
+
+
+  //////// Temperature calc_4 ////////
+  int value_soucre_T3 = value_3_1;
+  int value_soucreMAP_T3 = map(value_soucre_T3 , 0 , 32767 , 32767 , 0);
+  int valueTemp_3 = value_soucreMAP_T3;
+  if(millis() >= tempLastSample_3 + 1){
+    tempSampleSum_3 = tempSampleSum_3 + valueTemp_3;
+    tempSampleCount_3 = tempSampleCount_3 + 1;
+    tempLastSample_3= millis();
+  }
+  
+  tempMean_3 = tempSampleSum_3 / tempSampleCount_3;
+  R2_3 = ((voltageDividerR1 * tempMean_3)/(32767 - tempMean_3));
+  a3 = 1/T1;
+  b3 = log10(R1/R2_3);
+  c3 = b3 / log10(e);
+  d3 = c3 / BValue;
+  T2_3 = 1 / (a3-d3);
+  T2_3 = T2_3 - 273.15,decimalPrecision;
+
+
+
+
+
+////////// soil moisture calc_1 ////////
+  int sensorValuesoil_0 = value_2_3;
+  float voltageSoil_0 = sensorValuesoil_0 * (Vmax - Vmin) / 32767.0 + Vmin;
+  
+  float SoilMoisture_0 = (voltageSoil_0 - Vmin) / (Vmax - Vmin) * (soilMax - soilMin) + soilMin;
+
+
+//////////// soil moisture calc_2 ////////
+  int sensorValuesoil_1 = value_4_3;
+  float voltageSoil_1 = sensorValuesoil_1 * (Vmax - Vmin) / 32767.0 + Vmin;
+  
+  float SoilMoisture_1 = (voltageSoil_1 - Vmin) / (Vmax - Vmin) * (soilMax - soilMin) + soilMin;
+
+
+
+//////////// soil moisture calc_3 ////////
+  int sensorValuesoil_2 = value_2_1;
+  float voltageSoil_2 = sensorValuesoil_2 * (Vmax - Vmin) / 32767.0 + Vmin;
+  
+  float SoilMoisture_2 = (voltageSoil_2 - Vmin) / (Vmax - Vmin) * (soilMax - soilMin) + soilMin;
+
+
+
+//////////// soil moisture calc_4 ////////
+  int sensorValuesoil_3 = value_4_1;
+  float voltageSoil_3 = sensorValuesoil_3 * (Vmax - Vmin) / 32767.0 + Vmin;
+  
+  float SoilMoisture_3 = (voltageSoil_3 - Vmin) / (Vmax - Vmin) * (soilMax - soilMin) + soilMin;
+
+
+/////////////// MQTT PUBLISH ////////////
+  mqtt.loop();
+  String dataJS = "{\"Soil Teamperature_1\":" + String(T2_0, 3) + ",\"Soil Teamperature_2\":" + String(T2_1, 3) + ",\"Soil Teamperature_3\":" + String(T2_2, 3) + ",\"Soil Teamperature_4\":" + String(T2_3, 3) + ",\"Soil Moisture_1\":" + String(SoilMoisture_0, 3) + ",\"Soil Moisture_2\":" + String(SoilMoisture_1, 3) + ",\"Soil Moisture_3\":" + String(SoilMoisture_2, 3) + ",\"Soil Moisture_4\":" + String(SoilMoisture_3, 3) + "}";
+  char json[300];
+  dataJS.toCharArray(json,dataJS.length()+1);
+  mqtt.publish("v1/devices/me/telemetry" , json);
+
+
+/////////// RESET VALUE //////////////
+  tempSampleSum_0 = 0;
+  tempSampleCount_0  = 0;
+  tempSampleSum_1 = 0;
+  tempSampleCount_1  = 0;
+  tempSampleSum_2 = 0;
+  tempSampleCount_2  = 0;
+  tempSampleSum_3 = 0;
+  tempSampleCount_3  = 0;
+
+  
+}
+
+
+
+
+
+
+///////////////////////////////////////// Temperature & Humidity-AM2305B Void //////////////////////////////////////
+
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+#define DHTPIN 14
+#define DHTTYPE DHT22
+float Temperature_S;
+float Humidity_S;
+
+DHT_Unified dht(DHTPIN, DHTTYPE);
+uint32_t delayMS;
+
+
+void initial_TempHumi(){
+  dht.begin();
+  Serial.begin(115200);
+  sensor_t sensor;
+  dht.temperature().getSensor(&sensor);
+  dht.humidity().getSensor(&sensor);
+  delayMS = sensor.min_delay / 1000;
+  
+}
+
+
+void TempHumi(){
+  delay(delayMS);
+  sensors_event_t event;
+  dht.temperature().getEvent(&event);
+  if (isnan(event.temperature)) {
+    Serial.println(F("Error reading temperature!"));
+  } 
+  else {
+    //Serial.print(F("Temperature: "));
+    //Serial.print(event.temperature);
+    //Serial.println(F("°C"));
+    Temperature_S = event.temperature;
+  }
+  dht.humidity().getEvent(&event);
+  if (isnan(event.relative_humidity)) {
+    Serial.println(F("Error reading humidity!"));
+  }
+  else {
+    //Serial.print(F("Humidity: "));
+    //Serial.print(event.relative_humidity);
+    //Serial.println(F("%"));
+    Humidity_S = event.relative_humidity;
+  }
+
+  mqtt.loop();
+  String dataJS_1 = "{\"Teamperature\":" + String(Temperature_S, 3) + ",\"Humidity\":" + String(Humidity_S, 3) + "}";
+  char json_1[300];
+  dataJS_1.toCharArray(json_1,dataJS_1.length()+1);
+  mqtt.publish("v1/devices/me/telemetry" , json_1);
+
+}
+
+
+
+
+
+
+
+
+///////////////////////////////////////// UV_sensor-RK200-04 Void //////////////////////////////////////
+
+
+void UV_sensor(){
+  int mapUV = value_3_2;
+  float voltageUV = (mapUV * (5.0/32767.0))*1000;
+  Serial.print("milliV : ");
+  Serial.println(voltageUV);
+  float mapUV1 = map(voltageUV , 0 , 5000 , 0 , 11 );  //5000 คือค่า Max สุดของหำืหนพส่งมาเอาไปคำนวณ (mapUV * (5.0/32767.0))*1000 จะได้ 5000 เอามาแมพกับ 0-10
+//  Serial.print("UVindex : ");
+//  Serial.println(mapUV1);
+
+  mqtt.loop();
+  String dataJS_2 = "{\"UV value\":" + String(mapUV1, 3) + "}";
+  char json_2[300];
+  dataJS_2.toCharArray(json_2,dataJS_2.length()+1);
+  mqtt.publish("v1/devices/me/telemetry" , json_2);  
+
+}
+
+
+
+
+
+
+
+
+
+
+
+///////////////////////////////////////// Wind directions & speed-RK120-01 Void //////////////////////////////////////
+
+#include <Adafruit_GFX.h>
+int pinInterrupt = 15;
+int Count = 0;
+float windSpeed;
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+unsigned long debounceDelay = 1000;    // the debounce time; increase if the output flickers
+
+
+void onChange()
+{
+  if ( digitalRead(pinInterrupt) == LOW )
+    Count++;
+}
+
+
+void initial_wind(){
+  Serial.begin(115200); //Initialize serial port
+  pinMode( pinInterrupt, INPUT_PULLUP);// set the interrupt pin
+ 
+  //Enable
+  attachInterrupt( digitalPinToInterrupt(pinInterrupt), onChange, FALLING);
+  delay(500);
+}
+
+
+void Wind(){
+  if ((millis() - lastDebounceTime) > debounceDelay)
+  {
+    lastDebounceTime = millis();
+    windSpeed = (Count * 8.75)/100;
+    
+  }
+  //delay(1500);
+
+  //direction
+  int sensor_windDirectValue = value_4_2;
+  int wind_directions = map(sensor_windDirectValue, 0, 32767 , 0, 360);
+
+
+
+  mqtt.loop();
+  StaticJsonDocument<200> jsonDocument;
+  jsonDocument["Wind speed"] = windSpeed;
+  jsonDocument["Wind directions"] = wind_directions;
+  char jsonString[200];
+  serializeJson(jsonDocument, jsonString);
+  mqtt.publish("v1/devices/me/telemetry", jsonString);
+  Count = 0;
+  
+}
+
+
+
+
+
+
+///////////////////////////////////////// RainBucket-RK400-04 Void //////////////////////////////////////
+
+//#define RAIN_PIN 17        
+//int CALC_INTERVAL = 1000;   // increment of measurements
+//#define DEBOUNCE_TIME 80    // time * 1000 in microseconds required to get through bounce noise
+//
+//unsigned long nextCalc_rain;
+//unsigned long timer_rain;
+//
+//volatile unsigned int rainTrigger = 0;
+//volatile unsigned long last_micros_rg;
+//float litersPerTip = 0.2;
+//float rainfallPerMinute;
+//unsigned long lastMinuteMillis_rain = 0;
+//
+//
+//
+//void initial_Rain(){
+//  Serial.begin(115200); 
+//  attachInterrupt(digitalPinToInterrupt(RAIN_PIN), countingRain, FALLING); 
+//  
+//  pinMode(RAIN_PIN, INPUT_PULLUP);
+//  nextCalc_rain = millis() + CALC_INTERVAL;
+//}
+//
+//
+//void Rain_loop(){
+//  timer_rain = millis();
+//  if(timer_rain > nextCalc_rain) {
+//    nextCalc_rain = timer_rain + CALC_INTERVAL;
+//    Serial.print("Total Tips: ");
+//    Serial.println((float) rainTrigger);
+//
+//    if (timer_rain - lastMinuteMillis_rain >= 60000){
+//      rainfallPerMinute = rainTrigger * litersPerTip;
+////      Serial.print("Rainfall per minute: ");
+////      Serial.print(rainfallPerMinute);
+////      Serial.println(" mm/min");
+//
+//
+//
+//
+//      mqtt.loop();
+//      String dataJS_4 = "{\"Rainfall\":" + String(rainfallPerMinute, 3) + "}";
+//      char json_4[300];
+//      dataJS_4.toCharArray(json_4,dataJS_4.length()+1);
+//      mqtt.publish("v1/devices/me/telemetry" , json_4);
+//
+//      rainTrigger = 0;
+//      lastMinuteMillis_rain = timer_rain;
+//    }   
+//  }
+//}
+//
+//
+//void countingRain() {
+//  if((long)(micros() - last_micros_rg) >= DEBOUNCE_TIME * 1000) { 
+//   rainTrigger += 1;
+//   last_micros_rg = micros();
+//  }  
+//}
